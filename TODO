@@ -1,0 +1,123 @@
+
+Add mean kinship calculation. We already have the kinship coefficients
+in the matrix, so calculating the mean kinship is easy.
+
+We need a new option -k for the kinship column name. No default.
+The calculation is only done if the option is given.
+
+We also need a option -T for the time when mean kinship calculation
+should be done. This is necessary because the result depends on the
+population at the time. Defaults to now().
+
+Finally, we need an option to determine which animals are alive and
+available for breeding. Two ways to do that:
+
+1. A new -m option for max age. E.g. -m 6 would only consider those
+animals that are younger than six years.
+
+2. A "generic" selection argument, say -n "g2009 is not null", to get
+only those animals that were reported alive in the 2009 report.
+
+And of course, the animal must be born before the time of the calculation.
+
+A partially complete command-line:
+
+wright [other options] -k mk -m 6 -T 2009-12-31 -n "dod is null"
+
+This would include the animals in the mean kinship calculation that
+match this query:
+
+create temporary table kinship_tmp as
+select $id
+from $table
+where $birth < '2009-12-31'
+and date_add($birth, interval 6 years) > '2009-12-31'
+and dod = '';
+
+wright [other options] -k mk
+
+This includes all animals in the calculation.
+
+create temporary table kinship_tmp as
+select $id
+from $table;
+
+wright [other options] -k mk -T 2009-12-31 -n "g2009 is not null"
+
+create temporary table kinship_tmp as
+select $id
+from $table
+where $birth < '2009-12-31'
+and g2009 is not null;
+
+After this, update the main table like this:
+
+update $table
+set $mk = null;
+update $table t, kinship_tmp k
+set t.$mk = k.$mk
+where t.$id = k.$id;
+
+But we need to get the numbers into the temp table first...
+
+Those numbers are calculated from the matrix.
+What if I put all kinships into a big table? 25000000 rows.
+
+insert into $ktable
+values ($id1, $id2, $kinship);
+
+I don't need the temporary table at all!
+Just do the select to collect the id:s and put them in an array.
+Then do:
+
+/* because we really need the indexes into the rc array */
+for (i = 0; i < max_kinship; i++) {
+	kinship_table[i].index = lookup_id(kinship_table[i].id);
+}
+for (i = 0; i < max_kinship; i++) {
+	int index_i = kinship_table[i].index;
+	double total_kinship = 0;
+	for (j = 0; j < max_kinship; j++) {
+		int index_j = kinship_table[j].index;
+		if (i != j) total_kinship += rc[index_i][index_j];
+	}
+	kinship_table[i].mk = total_kinship/max_kinship;
+}
+
+
+
+---
+
+Since the program now has a dual purpose, only calculate inbreeding
+coefficients if the -c option is given. Remove the default.
+
+---
+
+Add a -v option and only be verbose if it is present.
+
+---
+
+Add an option to save the kinship table. This would permit trial matings.
+
+Two options for this: one for the name of the table, one to specify
+which parts of the table should be saved.
+
+create table kinship (
+id1 integer not null,
+id2 integer not null,
+kinship double not null);
+
+add unique index on kinship(id1, id2);
+
+Store only one combination of every animal pair. Make id1 the lower number.
+
+-N "g2009 != ''" -K kinship
+
+A table built like this will only need to store living animals, around
+500 in our case, as opposed to storing the full 5000 animal table.
+Storing 5000 animals would require ~5000*5000/2 = 12500000 lines,
+whereas storing only the living requires ~500*500/2 = 125000,
+a factor 100 reduction.
+
+insert into kinship values ($id1, $id2, $rc[$id1,$id2]);
+

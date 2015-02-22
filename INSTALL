@@ -1,0 +1,7 @@
+0. The database and the data must exist. How that is accomplished
+   is up to you. ;-)
+
+1. Install libsdb. See http://siag.nu/libsdb/
+
+2. Type make install in this directory.
+
